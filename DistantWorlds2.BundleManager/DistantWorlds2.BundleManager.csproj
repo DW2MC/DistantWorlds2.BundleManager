@@ -12,6 +12,7 @@
         <Authors>Distant Worlds 2 Modification Community</Authors>
         <Company>Distant Worlds 2 Modification Community</Company>
         <Product>Bundle Manager</Product>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
 
     <ItemGroup>
