@@ -21,7 +21,7 @@ namespace DistantWorlds2.BundleManager
             int totalSize = CalculateSizeInBytes(imageDescription);
 
             byte[] data = new byte[totalSize];
-            int dest_offset = 0;
+            int destOffset = 0;
             using BinaryReader br = new BinaryReader(ds);
             unsafe
             {
@@ -35,24 +35,24 @@ namespace DistantWorlds2.BundleManager
 
                         ds.Position = storageHeader.Chunks[i].Location;
                         ds.Read(data, 0, storageHeader.Chunks[i].Size);
-                        Utilities.CopyMemory(dest + dest_offset, (IntPtr)src, storageHeader.Chunks[i].Size);
-                        dest_offset += SlicePitch(width, height, imageDescription.Format);
+                        Utilities.CopyMemory(dest + destOffset, (IntPtr)src, storageHeader.Chunks[i].Size);
+                        destOffset += SlicePitch(width, height, imageDescription.Format);
                     }
                     return Image.New(imageDescription, (IntPtr)dest, 0, new System.Runtime.InteropServices.GCHandle?(), true);
                 }
             }
         }        
 
-        public static void Write(string root, string asset_path, Image image)
+        public static void Write(string root, string assetPath, Image image)
         {
-            var output_path = Path.Combine(root, asset_path);
-            var data_output_path = output_path + "_Data";
+            var outputPath = Path.Combine(root, assetPath);
+            var dataOutputPath = outputPath + "_Data";
 
-            Directory.CreateDirectory(Directory.GetParent(output_path).FullName);
+            Directory.CreateDirectory(Directory.GetParent(outputPath).FullName);
 
-            using FileStream dest_stream = File.OpenWrite(output_path);
+            using FileStream destStream = File.OpenWrite(outputPath);
             
-            BinarySerializationWriter serializationWriter = new BinarySerializationWriter(dest_stream);
+            BinarySerializationWriter serializationWriter = new BinarySerializationWriter(destStream);
             ChunkHeader header = new ChunkHeader
             {
                 Version = 1,
@@ -69,10 +69,10 @@ namespace DistantWorlds2.BundleManager
 
             storageHeader.InitialImage = false; //TODO: Use small mipmap as initial image.
             storageHeader.PackageTime = DateTime.UtcNow;
-            storageHeader.DataUrl = asset_path + "_Data";
+            storageHeader.DataUrl = assetPath + "_Data";
             storageHeader.Chunks = new ContentStorageHeader.ChunkEntry[image.Description.MipLevels];
 
-            int write_offset = 0;
+            int writeOffset = 0;
             for (int i = 0; i < image.Description.MipLevels; i++)
             {
                 int width = Math.Max(1, image.Description.Width >> i);
@@ -80,35 +80,35 @@ namespace DistantWorlds2.BundleManager
                 int pitch = SlicePitch(width, height, image.Description.Format);
                 storageHeader.Chunks[i] = new ContentStorageHeader.ChunkEntry
                 {
-                    Location = write_offset,
+                    Location = writeOffset,
                     Size = pitch
                 };
-                write_offset += pitch;
+                writeOffset += pitch;
             }
             storageHeader.HashCode = GetHashCode(storageHeader);
             storageHeader.Write(serializationWriter);
             serializationWriter.Write(0);
-            dest_stream.Position = 0;
+            destStream.Position = 0;
             header.Write(serializationWriter);
 
-            using FileStream data_stream = new FileStream(data_output_path, FileMode.Create);            
+            using FileStream dataStream = new FileStream(dataOutputPath, FileMode.Create);            
             int totalSize = CalculateSizeInBytes(image.Description);
-            data_stream.SetLength(totalSize);
-            data_stream.Seek(0, SeekOrigin.Begin);
+            dataStream.SetLength(totalSize);
+            dataStream.Seek(0, SeekOrigin.Begin);
             unsafe
             {
                 using (UnmanagedMemoryStream memoryStream = new UnmanagedMemoryStream((byte*)image.DataPointer, totalSize))
                 {
-                    memoryStream.CopyTo(data_stream);
+                    memoryStream.CopyTo(dataStream);
                 }
             }            
         }
 
         static private int CalculateSizeInBytes(ImageDescription desc)
         {
-            bool is_compressed = desc.Format.IsCompressed();
+            bool isCompressed = desc.Format.IsCompressed();
             int blockSize = desc.Format.SizeInBytes();
-            if (is_compressed)
+            if (isCompressed)
             {
                 switch (desc.Format)
                 {
@@ -130,7 +130,7 @@ namespace DistantWorlds2.BundleManager
             {
                 int width = Math.Max(1, desc.Width >> index);
                 int height = Math.Max(1, desc.Height >> index);
-                if (is_compressed)
+                if (isCompressed)
                 {
                     width = (width + 3) / 4;
                     height = (height + 3) / 4;
@@ -143,9 +143,9 @@ namespace DistantWorlds2.BundleManager
 
         static private int SlicePitch(int width, int height, PixelFormat format)
         {
-            bool is_compressed = format.IsCompressed();
+            bool isCompressed = format.IsCompressed();
             int blockSize = format.SizeInBytes();
-            if (is_compressed)
+            if (isCompressed)
             {
                 switch (format)
                 {
@@ -162,7 +162,7 @@ namespace DistantWorlds2.BundleManager
                         break;
                 }
             }
-            if (is_compressed)
+            if (isCompressed)
             {
                 width = (width + 3) / 4;
                 height = (height + 3) / 4;

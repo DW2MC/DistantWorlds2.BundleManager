@@ -36,6 +36,12 @@ public static class Program
                 Console.WriteLine("dw2bm ex [bundle name] <source file> <destination file>");
                 Console.WriteLine("    Extracts a file from within a bundle.");
                 Console.WriteLine();
+                Console.WriteLine("dw2bm id <source file>");
+                Console.WriteLine("    Gets the type identifier for a loose file.");
+                Console.WriteLine();
+                Console.WriteLine("dw2bm id [bundle name] <source file>");
+                Console.WriteLine("    Gets the type identifier for a bundled file.");
+                Console.WriteLine();
                 Console.WriteLine("dw2bm xt <source file> <destination file>");
                 Console.WriteLine("    Converts a texture from Xenko format to DDS.");
                 Console.WriteLine();
@@ -58,6 +64,8 @@ public static class Program
                 Console.WriteLine("dw2bm lb");
                 Console.WriteLine("dw2bm ls Abandoned **");
                 Console.WriteLine("dw2bm ex Abandoned \"Ships/Abandoned/Images/Abandoned_Colony\" Abandoned_Colony");
+                Console.WriteLine("dw2bm id Abandoned \"Ships/Abandoned/Images/Abandoned_Colony\"");
+                Console.WriteLine("dw2bm id Abandoned_Colony");
                 Console.WriteLine("dw2bm xt Abandoned_Colony Abandoned_Colony.dds");
                 Console.WriteLine("dw2bm tx Abandoned_Colony.dds Abandoned_Colony");
                 Console.WriteLine("dw2bm txs Abandoned_Colony.dds \"./mods/MyMod/assets\" \"Ships/Abandoned/Images/Abandoned_Colony\"");
@@ -121,7 +129,7 @@ public static class Program
                 Console.WriteLine($"{bundleName}:{src} -> {dst}");
                 if (odb.ContentIndexMap.TryGetValue(src, out var id))
                 {
-                    DatabaseFileProvider fileProvider = new DatabaseFileProvider(odb);
+                    var fileProvider = new DatabaseFileProvider(odb);
                     using var s = fileProvider.OpenStream(src, VirtualFileMode.Open, VirtualFileAccess.Read, VirtualFileShare.Read, StreamFlags.Seekable);
                     using var fs = File.Create(dst);
                     fs.SetLength(s.Length);
@@ -133,16 +141,52 @@ public static class Program
                     s.Seek(chunkHeader.OffsetToObject, SeekOrigin.Begin);
                     if(bsr.ReadBoolean())
                     {
-                        ImageDescription imageDescription = new ImageDescription();
+                        var imageDescription = new ImageDescription();
                         SerializerSelector.Default.GetSerializer<ImageDescription>().Serialize(ref imageDescription, ArchiveMode.Deserialize, bsr);
                         ContentStorageHeader storageHeader;
                         ContentStorageHeader.Read(bsr, out storageHeader);
                         
-                        using var content_src = fileProvider.OpenStream(storageHeader.DataUrl, VirtualFileMode.Open, VirtualFileAccess.Read, VirtualFileShare.Read);
-                        using var content_dst = File.Create(dst + "_Data");
-                        await content_src.CopyToAsync(content_dst);
+                        using var contentSrc = fileProvider.OpenStream(storageHeader.DataUrl, VirtualFileMode.Open, VirtualFileAccess.Read, VirtualFileShare.Read);
+                        using var contentDst = File.Create(dst + "_Data");
+                        await contentSrc.CopyToAsync(contentDst);
                     }
                     Console.WriteLine("Done.");
+                }
+                else
+                {
+                    await Console.Error.WriteLineAsync("Failed.");
+                    await Console.Error.FlushAsync();
+                    return 1;
+                }
+
+                return 0;
+            }
+            case 2 when args[0] == "id": {
+                var src = args[1];
+                Console.WriteLine($"Identifying {src}");
+                using var srcFs = File.OpenRead(src);
+                var bsr = new BinarySerializationReader(srcFs);
+                var chunkHeader = ChunkHeader.Read(bsr);
+                if (chunkHeader == null) throw new NotSupportedException("Invalid chunk header.");
+                Console.WriteLine($"Version: {chunkHeader.Version}");
+                Console.WriteLine(chunkHeader.Type);
+                return 0;
+            }
+            case 3 when args[0] == "id": {
+                var bundleName = args[1];
+                await odb.LoadBundle(bundleName);
+                var src = args[2];
+                Console.WriteLine($"Identifying {bundleName}:{src}");
+                if (odb.ContentIndexMap.TryGetValue(src, out var id))
+                {
+                    var fileProvider = new DatabaseFileProvider(odb);
+                    using var s = fileProvider.OpenStream(src, VirtualFileMode.Open, VirtualFileAccess.Read, VirtualFileShare.Read, StreamFlags.Seekable);
+                    s.Seek(0, SeekOrigin.Begin);
+                    var bsr = new BinarySerializationReader(s);
+                    var chunkHeader = ChunkHeader.Read(bsr);
+                    if (chunkHeader == null) throw new NotSupportedException("Invalid chunk header.");
+                    Console.WriteLine($"Version: {chunkHeader.Version}");
+                    Console.WriteLine(chunkHeader.Type);
                 }
                 else
                 {
@@ -162,7 +206,7 @@ public static class Program
                         ".dds" => ImageFileType.Dds,
                         _ => throw new NotImplementedException()
                     };
-                    return XenkoToDDS(src, dst);
+                    return XenkoToDds(src, dst);
             }            
             case 3 when args[0] == "tx": {
                 var src = args[1];
@@ -198,13 +242,13 @@ public static class Program
             }
             case 4 when args[0] == "txs": {
                 var src = args[1];
-                var dst_root = args[2];
-                var asset_path = args[3];
+                var dstRoot = args[2];
+                var assetPath = args[3];
 
                 using var srcFs = File.OpenRead(src);
                 using var img = Image.Load(srcFs);
 
-                StreamingImage.Write(dst_root, asset_path, img);
+                StreamingImage.Write(dstRoot, assetPath, img);
 
                 return 0;
             }
@@ -303,7 +347,7 @@ public static class Program
         }
     }
 
-    private static int XenkoToDDS(string src, string dst)
+    private static int XenkoToDds(string src, string dst)
     {
         using var srcFs = File.OpenRead(src);
         var bsr = new BinarySerializationReader(srcFs);
