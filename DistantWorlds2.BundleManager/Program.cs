@@ -35,6 +35,8 @@ public static class Program
                 Console.WriteLine();
                 Console.WriteLine("dw2bm ex [bundle name] <source file> <destination file>");
                 Console.WriteLine("    Extracts a file from within a bundle.");
+                Console.WriteLine("dw2bm ex [bundle name] [glob pattern] <destination folder>");
+                Console.WriteLine("    Extracts the files matching the pattern from within a bundle.");
                 Console.WriteLine();
                 Console.WriteLine("dw2bm id <source file>");
                 Console.WriteLine("    Gets the type identifier for a loose file.");
@@ -51,6 +53,16 @@ public static class Program
                 Console.WriteLine("dw2bm txs <source file> <destination root folder> <relative asset path>");
                 Console.WriteLine("    Converts a texture from DDS to Xenko's streaming texture format.");
                 Console.WriteLine();
+                Console.WriteLine("dw2bm xs <source file> <destination file>");
+                Console.WriteLine("dw2bm xs <glob pattern> <destination folder> <destination extension>");
+                Console.WriteLine("    Converts sound files from Xenko format to an output format.");
+                Console.WriteLine("    [REQUIRES FFmpeg binaries in PATH]");
+                Console.WriteLine();
+                Console.WriteLine("dw2bm sx <source file> <destination root folder> <relative asset path>");
+                Console.WriteLine("dw2bm sx <glob pattern> <destination root folder> <relative asset root>");
+                Console.WriteLine("    Converts sound files to Xenko format.");
+                Console.WriteLine("    [REQUIRES FFmpeg binaries in PATH]");
+                Console.WriteLine();
                 Console.WriteLine("dw2bm xu <source file> <destination file>");
                 Console.WriteLine("    Converts an unpacked Xenko asset to a packable asset.");
                 Console.WriteLine("    Yeah it doesn't make sense to me either.");
@@ -64,11 +76,16 @@ public static class Program
                 Console.WriteLine("dw2bm lb");
                 Console.WriteLine("dw2bm ls Abandoned **");
                 Console.WriteLine("dw2bm ex Abandoned \"Ships/Abandoned/Images/Abandoned_Colony\" Abandoned_Colony");
+                Console.WriteLine("dw2bm ex CoreContent Sounds/** \"./mods/MyMod/extracted/\"");
                 Console.WriteLine("dw2bm id Abandoned \"Ships/Abandoned/Images/Abandoned_Colony\"");
                 Console.WriteLine("dw2bm id Abandoned_Colony");
                 Console.WriteLine("dw2bm xt Abandoned_Colony Abandoned_Colony.dds");
                 Console.WriteLine("dw2bm tx Abandoned_Colony.dds Abandoned_Colony");
                 Console.WriteLine("dw2bm txs Abandoned_Colony.dds \"./mods/MyMod/assets\" \"Ships/Abandoned/Images/Abandoned_Colony\"");
+                Console.WriteLine("dw2bm xs HeavyRailGun HeavyRailGun.wav");
+                Console.WriteLine("dw2bm xs \"./mods/MyMod/extracted/Sounds/**\" \"./mods/MyMod/assets/Sounds/\" wav");                    
+                Console.WriteLine("dw2bm sx HeavyRailGun.wav HeavyRailGun");
+                Console.WriteLine("dw2bm sx \"./mods/MyMod/source/Sounds/**\" \"./mods/MyMod/assets/\" \"Sounds/\"");
                 Console.WriteLine("dw2bm xu Abandoned_Colony AbandonedColonyForBundle");
                 Console.WriteLine("dw2bm mb MyBundle path/to/files/**");
                 Console.WriteLine();
@@ -124,42 +141,68 @@ public static class Program
             case 4 when args[0] == "ex": {
                 var bundleName = args[1];
                 await odb.LoadBundle(bundleName);
-                var src = args[2];
-                var dst = args[3];
-                Console.WriteLine($"{bundleName}:{src} -> {dst}");
-                if (odb.ContentIndexMap.TryGetValue(src, out var id))
+                async Task Extract(string src, string dst)
                 {
-                    var fileProvider = new DatabaseFileProvider(odb);
-                    using var s = fileProvider.OpenStream(src, VirtualFileMode.Open, VirtualFileAccess.Read, VirtualFileShare.Read, StreamFlags.Seekable);
-                    using var fs = File.Create(dst);
-                    fs.SetLength(s.Length);
-                    await s.CopyToAsync(fs);
-                    s.Seek(0, SeekOrigin.Begin);
-                    var bsr = new BinarySerializationReader(s);
-                    var chunkHeader = ChunkHeader.Read(bsr);
-                    if (chunkHeader == null) throw new NotSupportedException("Invalid chunk header.");
-                    s.Seek(chunkHeader.OffsetToObject, SeekOrigin.Begin);
-                    if(bsr.ReadBoolean())
+                    Console.WriteLine($"{bundleName}:{src} -> {dst}");
+                    if (odb.ContentIndexMap.TryGetValue(src, out var id))
                     {
-                        var imageDescription = new ImageDescription();
-                        SerializerSelector.Default.GetSerializer<ImageDescription>().Serialize(ref imageDescription, ArchiveMode.Deserialize, bsr);
-                        ContentStorageHeader storageHeader;
-                        ContentStorageHeader.Read(bsr, out storageHeader);
-                        
-                        using var contentSrc = fileProvider.OpenStream(storageHeader.DataUrl, VirtualFileMode.Open, VirtualFileAccess.Read, VirtualFileShare.Read);
-                        using var contentDst = File.Create(dst + "_Data");
-                        await contentSrc.CopyToAsync(contentDst);
+                        var fileProvider = new DatabaseFileProvider(odb);
+                        using var s = fileProvider.OpenStream(src, VirtualFileMode.Open, VirtualFileAccess.Read, VirtualFileShare.Read, StreamFlags.Seekable);
+                        new FileInfo(dst).Directory.Create();
+                        using var fs = File.Create(dst);
+                        fs.SetLength(s.Length);
+                        await s.CopyToAsync(fs);
+                        if (!src.EndsWith("_Data"))
+                        {
+                            s.Seek(0, SeekOrigin.Begin);
+                            var bsr = new BinarySerializationReader(s);
+                            var chunkHeader = ChunkHeader.Read(bsr);
+                            if (chunkHeader == null) throw new NotSupportedException("Invalid chunk header.");
+                            var dataUrl = src + "_Data";
+                            if (odb.ContentIndexMap.TryGetValue(src, out id))
+                            {
+                                using var contentSrc = fileProvider.OpenStream(dataUrl, VirtualFileMode.Open, VirtualFileAccess.Read, VirtualFileShare.Read);
+                                using var contentDst = File.Create(dst + "_Data");
+                                await contentSrc.CopyToAsync(contentDst);
+                            }
+                        }
                     }
-                    Console.WriteLine("Done.");
-                }
-                else
-                {
-                    await Console.Error.WriteLineAsync("Failed.");
-                    await Console.Error.FlushAsync();
-                    return 1;
+                    else
+                    {
+                        await Console.Error.WriteLineAsync("Failed.");
+                        await Console.Error.FlushAsync();                        
+                    }
                 }
 
-                return 0;
+                if (!args[2].Contains('*')) //Single file
+                {
+                    var src = args[2];
+                    var dst = args[3];
+                    await Extract(src, dst);
+                    
+                    Console.WriteLine("Done.");
+                    return 0;
+                }
+                else //Glob
+                {
+                    var globExpr = args[2];
+                    var matcher = new Matcher(StringComparison.Ordinal);
+                    matcher.AddInclude(globExpr);
+                    var map = odb.ContentIndexMap;
+                    var r = matcher.Match(map.GetMergedIdMap().Select(kv => kv.Key));
+
+                    if (!r.HasMatches)
+                        return 1;
+
+                    foreach (var file in r.Files)
+                    {
+                        var src = file.Path;
+                        var dst = Path.Combine(Path.GetDirectoryName(args[3]), file.Path);
+                        await Extract(src, dst);
+                    }
+                    Console.WriteLine("Done.");
+                    return 0;
+                }
             }
             case 2 when args[0] == "id": {
                 var src = args[1];
@@ -251,6 +294,66 @@ public static class Program
                 StreamingImage.Write(dstRoot, assetPath, img);
 
                 return 0;
+            }
+            case 3 when args[0] == "xs":
+            {
+
+                var src = args[1];
+                var dst = args[2];
+                SoundConverter.XenkoToSoundfile(src, dst);
+                return 0;
+
+            }
+            case 4 when args[0] == "xs":
+            {
+                var globExpr = args[1];
+                var matcher = new Matcher(StringComparison.OrdinalIgnoreCase);
+                matcher.AddInclude(globExpr);
+                var r = matcher.Execute(new DirectoryInfoWrapper(new DirectoryInfo(".")));
+
+                if (!r.HasMatches)
+                    return 1;
+
+                foreach (var file in r.Files)
+                {
+                    var src = file.Path;
+                    var dst = Path.Combine(Path.GetDirectoryName(args[2]), file.Stem) + $".{args[3]}";
+                    SoundConverter.XenkoToSoundfile(src, dst);
+                }
+                Console.WriteLine("Done.");
+                return 0;
+            }
+
+            case 4 when args[0] == "sx":
+            {                
+                if (!args[1].Contains('*')) //Single file
+                {
+                    var src = args[1];
+                    var dstRoot = args[2];
+                    var assetPath = args[3];
+                    SoundConverter.SoundToXenko(src, dstRoot, assetPath);
+                    return 0;
+                }
+                else //Glob
+                {
+                    var globExpr = args[1];
+                    var matcher = new Matcher(StringComparison.Ordinal);
+                    matcher.AddInclude(globExpr);
+                    var r = matcher.Execute(new DirectoryInfoWrapper(new DirectoryInfo(".")));
+
+                    if (!r.HasMatches)
+                        return 1;
+
+                    foreach (var file in r.Files)
+                    {
+                        var dstRoot = args[2];
+                        var src = file.Path;
+                        var assetPath = Path.Combine(Path.GetDirectoryName(args[3]), Path.ChangeExtension(file.Stem, null)).Replace('\\','/');
+                        SoundConverter.SoundToXenko(src, dstRoot, assetPath);
+                    }
+                    Console.WriteLine("Done.");
+                    return 0;
+                }
             }
             case 3 when args[0] == "xu": {
                 var src = args[1];
