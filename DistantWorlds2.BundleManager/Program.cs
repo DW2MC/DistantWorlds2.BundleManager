@@ -185,6 +185,8 @@ public static class Program
                 }
                 else //Glob
                 {
+                    if (!args[3].EndsWith('/') && !args[3].EndsWith('\\'))
+                            args[3] += "/";
                     var globExpr = args[2];
                     var matcher = new Matcher(StringComparison.Ordinal);
                     matcher.AddInclude(globExpr);
@@ -306,6 +308,8 @@ public static class Program
             }
             case 4 when args[0] == "xs":
             {
+                if (!args[3].StartsWith("."))
+                    args[3] = "." + args[3];
                 var globExpr = args[1];
                 var matcher = new Matcher(StringComparison.OrdinalIgnoreCase);
                 matcher.AddInclude(globExpr);
@@ -317,7 +321,8 @@ public static class Program
                 foreach (var file in r.Files)
                 {
                     var src = file.Path;
-                    var dst = Path.Combine(Path.GetDirectoryName(args[2]), file.Stem) + $".{args[3]}";
+                    var dst = Path.Combine(Path.GetDirectoryName(args[2]), file.Stem) + $"{args[3]}";
+                    Console.WriteLine($"{src} -> {dst}");
                     SoundConverter.XenkoToSoundfile(src, dst);
                 }
                 Console.WriteLine("Done.");
@@ -349,6 +354,7 @@ public static class Program
                         var dstRoot = args[2];
                         var src = file.Path;
                         var assetPath = Path.Combine(Path.GetDirectoryName(args[3]), Path.ChangeExtension(file.Stem, null)).Replace('\\','/');
+                        Console.WriteLine($"{src} -> {Path.Combine(dstRoot, assetPath)}");
                         SoundConverter.SoundToXenko(src, dstRoot, assetPath);
                     }
                     Console.WriteLine("Done.");
